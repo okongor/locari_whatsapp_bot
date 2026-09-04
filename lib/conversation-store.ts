@@ -3,7 +3,7 @@
 // across WhatsApp's stateless webhook calls.
 
 import { getFirestore } from "firebase-admin/firestore";
-import "@/src/lib/firebase-admin"; // ensures Admin is initialized
+import "@/src/lib/firebaseAdmin"; // ensures Admin is initialized
 
 const db = getFirestore();
 const COLLECTION = "whatsappConversations";

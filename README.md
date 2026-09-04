@@ -9,9 +9,13 @@ for rentals and returns real listings from Firestore, right in WhatsApp.
 - `lib/claude-agent.ts` — Claude tool-use loop; calls `getPropertyListings`
 - `lib/whatsapp.ts` — Meta Cloud API send helpers + inbound payload parsing
 - `lib/conversation-store.ts` — Firestore-backed per-phone conversation history
-- `src/ai/tools/listing-retrieval.ts` — ⚠️ **placeholder**, built from the search
-  spec, not the real Locari source. Replace with the actual file.
-- `src/lib/firebase-admin.ts` — Firebase Admin SDK init (shared)
+- `src/ai/tools/listing-retrieval.ts` — ported from Locari's real
+  `src/ai/tools/listing-retrieval.ts`. The original is a Genkit tool
+  (`ai.defineTool`); this version keeps the exact same filtering/matching
+  logic but exposes it as a plain async function, since this bot uses
+  Anthropic tool-calling directly rather than Genkit.
+- `src/lib/firebaseAdmin.ts` — copied as-is from Locari's real
+  `src/lib/firebaseAdmin.ts` (same env vars, same init pattern).
 
 ## Setup
 
@@ -26,17 +30,15 @@ for rentals and returns real listings from Firestore, right in WhatsApp.
    WHATSAPP_TOKEN=              # Meta Cloud API access token
    WHATSAPP_PHONE_NUMBER_ID=    # from Meta App Dashboard
    WHATSAPP_VERIFY_TOKEN=       # any string you choose
-   FIREBASE_SERVICE_ACCOUNT=    # full service account JSON, single line
+   FIREBASE_PROJECT_ID=
+   FIREBASE_CLIENT_EMAIL=
+   FIREBASE_PRIVATE_KEY=        # keep the literal \n's, the code converts them
    ```
-   On Replit, set these under the **Secrets** tab instead of a `.env.local` file.
+   Use the same Firebase service account Locari's main app uses — this bot
+   reads from the same `listings` collection. On Replit, set these under the
+   **Secrets** tab instead of a `.env.local` file.
 
-3. **Swap in the real listing-retrieval.ts** — `src/ai/tools/listing-retrieval.ts`
-   is currently rebuilt from the spec (Firestore field names, filtering rules)
-   rather than copied from your actual codebase. Once you can paste in the real
-   file, replace it directly — nothing else in the project needs to change as
-   long as `getPropertyListings(input)` keeps the same shape.
-
-4. **Run locally / on Replit**
+3. **Run locally / on Replit**
    ```
    npm run dev
    ```
@@ -60,6 +62,9 @@ for rentals and returns real listings from Firestore, right in WhatsApp.
   `interactiveReplyId` is parsed in `whatsapp.ts` but the webhook doesn't yet
   fetch and send that specific listing's full detail/image.
 - **Minimal error handling / no retry-backoff** on Graph API calls.
-- **Firestore query assumptions** in `listing-retrieval.ts` (collection name
-  `listings`, composite index on `status` + `yearlyRent` + `beds`) need
-  verifying against your real schema and Firestore indexes.
+- **Only `status` and `type` are filtered at the Firestore query level** —
+  location, price, and beds are filtered in-memory after fetching (this
+  matches Locari's real implementation, not a limitation introduced here).
+  Fine at current listing volumes; worth revisiting if the `listings`
+  collection grows large enough that fetching all published listings per
+  query becomes slow.
