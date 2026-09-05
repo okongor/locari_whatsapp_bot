@@ -6,14 +6,14 @@ for rentals and returns real listings from Firestore, right in WhatsApp.
 ## Structure
 
 - `app/api/whatsapp/webhook/route.ts` — Meta webhook (GET verify, POST inbound messages)
-- `lib/claude-agent.ts` — Claude tool-use loop; calls `getPropertyListings`
+- `lib/llm-agent.ts` — DeepSeek tool-use loop (OpenAI-compatible API); calls `getPropertyListings`
 - `lib/whatsapp.ts` — Meta Cloud API send helpers + inbound payload parsing
 - `lib/conversation-store.ts` — Firestore-backed per-phone conversation history
 - `src/ai/tools/listing-retrieval.ts` — ported from Locari's real
   `src/ai/tools/listing-retrieval.ts`. The original is a Genkit tool
   (`ai.defineTool`); this version keeps the exact same filtering/matching
   logic but exposes it as a plain async function, since this bot uses
-  Anthropic tool-calling directly rather than Genkit.
+  OpenAI-style tool-calling (via DeepSeek) directly rather than Genkit.
 - `src/lib/firebaseAdmin.ts` — copied as-is from Locari's real
   `src/lib/firebaseAdmin.ts` (same env vars, same init pattern).
 
@@ -26,7 +26,7 @@ for rentals and returns real listings from Firestore, right in WhatsApp.
 
 2. **Env vars** — copy `.env.example` to `.env.local` and fill in:
    ```
-   ANTHROPIC_API_KEY=
+   DEEPSEEK_API_KEY=
    WHATSAPP_TOKEN=              # Meta Cloud API access token
    WHATSAPP_PHONE_NUMBER_ID=    # from Meta App Dashboard
    WHATSAPP_VERIFY_TOKEN=       # any string you choose

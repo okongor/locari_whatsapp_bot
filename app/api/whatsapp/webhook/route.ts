@@ -11,7 +11,7 @@ import {
   getConversationHistory,
   saveConversationHistory,
 } from "@/lib/conversation-store";
-import { runAgentTurn } from "@/lib/claude-agent";
+import { runAgentTurn } from "@/lib/llm-agent";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN!;
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       text
     );
 
-    // Send Claude's natural-language reply first
+    // Send the assistant's natural-language reply first
     if (replyText) {
       await sendTextMessage(from, replyText);
     }
