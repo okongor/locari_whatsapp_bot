@@ -50,6 +50,53 @@ export async function sendListingImage(
   });
 }
 
+export type ListSection = {
+  title: string;
+  rows: { id: string; title: string; description?: string }[];
+};
+
+/** Generic WhatsApp interactive list message (dropdown of up to 10 options) */
+export async function sendListMessage(
+  to: string,
+  bodyText: string,
+  buttonLabel: string,
+  sections: ListSection[]
+) {
+  return callGraphApi({
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: bodyText },
+      action: { button: buttonLabel, sections },
+    },
+  });
+}
+
+/** Reply buttons — WhatsApp allows a max of 3 */
+export async function sendReplyButtons(
+  to: string,
+  bodyText: string,
+  buttons: { id: string; title: string }[]
+) {
+  return callGraphApi({
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: bodyText },
+      action: {
+        buttons: buttons.slice(0, 3).map((b) => ({
+          type: "reply",
+          reply: { id: b.id, title: b.title.slice(0, 20) },
+        })),
+      },
+    },
+  });
+}
+
 export type ListingSummary = {
   id: string;
   title: string;
@@ -139,11 +186,13 @@ export function parseInboundPayload(body: any): InboundMessage | null {
 
   if (message.type === "interactive") {
     const listReply = message.interactive?.list_reply;
+    const buttonReply = message.interactive?.button_reply;
+    const reply = listReply ?? buttonReply;
     return {
       from,
-      text: listReply?.title ?? "",
+      text: reply?.title ?? "",
       type: "interactive",
-      interactiveReplyId: listReply?.id,
+      interactiveReplyId: reply?.id,
     };
   }
 

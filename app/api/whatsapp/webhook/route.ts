@@ -3,15 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   parseInboundPayload,
   sendTextMessage,
+  sendListMessage,
   sendListingImage,
   sendListingsPicker,
   buildListingCaption,
 } from "@/lib/whatsapp";
-import {
-  getConversationHistory,
-  saveConversationHistory,
-} from "@/lib/conversation-store";
-import { runAgentTurn } from "@/lib/llm-agent";
+import { getFlowState, saveFlowState, resetFlowState } from "@/lib/flow-store";
+import { getMenuMessage, advanceFlow } from "@/lib/menu-flow";
+import { getPropertyListings } from "@/src/ai/tools/listing-retrieval";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN!;
 
@@ -31,62 +30,128 @@ export async function GET(req: NextRequest) {
   return new NextResponse("Forbidden", { status: 403 });
 }
 
+/** Sends whatever WhatsApp message a given menu step calls for */
+async function sendMenuStep(to: string, step: Parameters<typeof getMenuMessage>[0]) {
+  const message = getMenuMessage(step);
+  if (message.kind === "list") {
+    await sendListMessage(to, message.body, message.buttonLabel, [
+      { title: "Options", rows: message.rows },
+    ]);
+  } else {
+    await sendTextMessage(to, message.body);
+  }
+}
+
+const RESTART_KEYWORDS = ["hi", "hello", "start", "restart", "menu"];
+
 /**
  * Meta POSTs here for every inbound message, delivery receipt, etc.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
-  // Always 200 quickly — Meta retries aggressively on non-200s.
-  // Do the real work, but don't let a downstream error surface as a webhook failure.
   try {
     const inbound = parseInboundPayload(body);
-    if (!inbound || !inbound.text) {
+    if (!inbound) {
       return NextResponse.json({ ok: true });
     }
 
-    const { from, text } = inbound;
+    const { from, text, type, interactiveReplyId } = inbound;
 
-    const history = await getConversationHistory(from);
-    const { replyText, listings, updatedHistory } = await runAgentTurn(
-      history,
-      text
-    );
+    let state = await getFlowState(from);
 
-    // Send the assistant's natural-language reply first
-    if (replyText) {
-      await sendTextMessage(from, replyText);
+    // Plain-text greeting/restart keywords always reset to the top of the menu
+    if (
+      type === "text" &&
+      RESTART_KEYWORDS.includes(text.trim().toLowerCase())
+    ) {
+      await resetFlowState(from);
+      await sendMenuStep(from, "start");
+      return NextResponse.json({ ok: true });
     }
 
-    // Then send the actual listings, if any were found
-    if (listings && listings.length > 0) {
-      if (listings.length === 1) {
-        const l = listings[0];
-        const image = l.imageUrls?.[0];
-        if (image) {
-          await sendListingImage(from, image, buildListingCaption(l));
-        }
-      } else {
-        await sendListingsPicker(
-          from,
-          "Here's what I found — tap to see details:",
-          listings.map((l: any) => ({
-            id: l.id,
-            title: l.title,
-            yearlyRent: l.yearlyRent,
-            beds: l.beds,
-            lga: l.address?.lga,
-            state: l.address?.state,
-          }))
-        );
+    // Case 1: user tapped a button/list option
+    if (type === "interactive" && interactiveReplyId) {
+      const { nextState, readyToSearch } = advanceFlow(state, {
+        selectionId: interactiveReplyId,
+      });
+      state = nextState;
+      await saveFlowState(from, state);
+
+      if (readyToSearch) {
+        await runSearchAndReply(from, state.filters);
+        await resetFlowState(from); // ready for a fresh search next time
+        return NextResponse.json({ ok: true });
       }
+
+      await sendMenuStep(from, state.step);
+      return NextResponse.json({ ok: true });
     }
 
-    await saveConversationHistory(from, updatedHistory);
+    // Case 2: user sent free text while we're expecting the custom-location fallback
+    if (type === "text" && state.step === "awaiting_location_text") {
+      const { nextState, readyToSearch } = advanceFlow(state, {
+        freeText: text,
+      });
+      state = nextState;
+      await saveFlowState(from, state);
+
+      if (readyToSearch) {
+        await runSearchAndReply(from, state.filters);
+        await resetFlowState(from);
+        return NextResponse.json({ ok: true });
+      }
+
+      await sendMenuStep(from, state.step);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Case 3: anything else (unexpected free text mid-flow, or a brand new
+    // conversation) — (re)present the current step's menu
+    await sendMenuStep(from, state.step === "done" ? "start" : state.step);
   } catch (err) {
     console.error("WhatsApp webhook error:", err);
-    // Optionally notify the user something went wrong, best-effort
   }
 
   return NextResponse.json({ ok: true });
+}
+
+async function runSearchAndReply(
+  from: string,
+  filters: { propertyType?: string; location?: string; maxPrice?: number; beds?: number }
+) {
+  const listings = await getPropertyListings(filters);
+
+  if (!listings || listings.length === 0) {
+    await sendTextMessage(
+      from,
+      "I couldn't find any listings matching that exactly 😕 Try again with a wider budget or a nearby area — send *menu* to restart your search."
+    );
+    return;
+  }
+
+  if (listings.length === 1) {
+    const l = listings[0];
+    const image = l.imageUrls?.[0];
+    if (image) {
+      await sendListingImage(from, image, buildListingCaption(l));
+    } else {
+      await sendTextMessage(from, buildListingCaption(l));
+    }
+  } else {
+    await sendListingsPicker(
+      from,
+      `Found ${listings.length} listings matching what you're after — tap to see details:`,
+      listings.map((l: any) => ({
+        id: l.id,
+        title: l.title,
+        yearlyRent: l.yearlyRent,
+        beds: l.beds,
+        lga: l.address?.lga,
+        state: l.address?.state,
+      }))
+    );
+  }
+
+  await sendTextMessage(from, "Send *menu* anytime to start a new search.");
 }
