@@ -96,27 +96,6 @@ export function getMenuMessage(step: FlowStep): MenuMessage {
   }
 }
 
-/**
- * Resolves a tapped option's displayed title back to its internal
- * selection id. Some providers (e.g. WATI) reliably echo the row/button
- * title in their webhook payload but not always a custom id, so matching
- * by title is the safer cross-provider approach.
- */
-export function matchTitleToId(step: FlowStep, title: string): string | undefined {
-  const normalized = title.trim().toLowerCase();
-  const pools: Record<string, { id: string; title: string }[]> = {
-    start: PROPERTY_TYPES,
-    awaiting_property_type: PROPERTY_TYPES,
-    awaiting_location: POPULAR_LOCATIONS,
-    awaiting_budget: BUDGET_RANGES,
-    awaiting_beds: BED_OPTIONS,
-  };
-  const pool = pools[step];
-  if (!pool) return undefined;
-  const match = pool.find((o) => o.title.trim().toLowerCase() === normalized);
-  return match?.id;
-}
-
 // ---- Advancing the flow ----
 
 export type AdvanceResult = {
