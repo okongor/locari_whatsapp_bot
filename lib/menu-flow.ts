@@ -6,7 +6,7 @@ import type { FlowState, FlowStep, FlowFilters } from "./flow-store";
 
 // ---- Option catalogs ----
 
-const PROPERTY_TYPES = [
+export const PROPERTY_TYPES = [
   { id: "type_house", title: "House / Flat / Apartment" },
   { id: "type_shortlet", title: "Shortlet" },
   { id: "type_office", title: "Office Space" },
@@ -14,7 +14,7 @@ const PROPERTY_TYPES = [
   { id: "type_shop", title: "Shop" },
 ];
 
-const POPULAR_LOCATIONS = [
+export const POPULAR_LOCATIONS = [
   { id: "loc_lekki", title: "Lekki" },
   { id: "loc_ikeja", title: "Ikeja" },
   { id: "loc_ajah", title: "Ajah" },
@@ -24,7 +24,7 @@ const POPULAR_LOCATIONS = [
   { id: "loc_other", title: "Type a different area" },
 ];
 
-const BUDGET_RANGES = [
+export const BUDGET_RANGES = [
   { id: "budget_500k", title: "Under ₦500k/yr", maxPrice: 500_000 },
   { id: "budget_1m", title: "₦500k – ₦1m/yr", maxPrice: 1_000_000 },
   { id: "budget_2m", title: "₦1m – ₦2m/yr", maxPrice: 2_000_000 },
@@ -32,7 +32,7 @@ const BUDGET_RANGES = [
   { id: "budget_any", title: "No limit", maxPrice: undefined },
 ];
 
-const BED_OPTIONS = [
+export const BED_OPTIONS = [
   { id: "beds_1", title: "1 bedroom", beds: 1 },
   { id: "beds_2", title: "2 bedrooms", beds: 2 },
   { id: "beds_3", title: "3 bedrooms", beds: 3 },
@@ -94,6 +94,27 @@ export function getMenuMessage(step: FlowStep): MenuMessage {
         body: "Searching for listings that match what you selected...",
       };
   }
+}
+
+/**
+ * Resolves a tapped option's displayed title back to its internal
+ * selection id. Some providers (e.g. WATI) reliably echo the row/button
+ * title in their webhook payload but not always a custom id, so matching
+ * by title is the safer cross-provider approach.
+ */
+export function matchTitleToId(step: FlowStep, title: string): string | undefined {
+  const normalized = title.trim().toLowerCase();
+  const pools: Record<string, { id: string; title: string }[]> = {
+    start: PROPERTY_TYPES,
+    awaiting_property_type: PROPERTY_TYPES,
+    awaiting_location: POPULAR_LOCATIONS,
+    awaiting_budget: BUDGET_RANGES,
+    awaiting_beds: BED_OPTIONS,
+  };
+  const pool = pools[step];
+  if (!pool) return undefined;
+  const match = pool.find((o) => o.title.trim().toLowerCase() === normalized);
+  return match?.id;
 }
 
 // ---- Advancing the flow ----
